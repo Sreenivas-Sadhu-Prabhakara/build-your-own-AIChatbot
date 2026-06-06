@@ -13,15 +13,33 @@ tooling you install once.
 
 ## Hardware
 
-The reference build runs on an **M2 Max / 64 GB / 30 GPU cores**. You can go smaller, but a 9B
-model in 4-bit plus BGE-M3 embeddings wants headroom.
+:::tip[Minimum to run this]
+- **Apple-Silicon Mac** (M1 or newer) — the models run on the GPU via MLX/Metal, so Intel Macs
+  won't work.
+- **16 GB unified memory** is the floor; **32 GB is the realistic minimum** for a comfortable
+  run. The 9B model (~6 GB) and BGE-M3 embeddings (~4 GB) sit in memory *together*, alongside
+  Postgres, the Go service, and macOS.
+- **~25 GB free disk** for the model files and Hugging Face caches.
+- **macOS 13 Ventura or newer.**
 
-| Component | Minimum | Reference build |
-|---|---|---|
-| Chip | Apple Silicon (M1 or newer) | M2 Max |
-| Unified memory | 32 GB | 64 GB |
-| Free disk | ~25 GB (models + caches) | — |
-| macOS | 13 Ventura or newer | 15 |
+You do **not** need a discrete GPU, a Linux box, or any paid cloud account to complete chapters
+00–07. Only the final **08 · Go live** chapter needs free Netlify + ngrok accounts.
+:::
+
+The reference build runs on an **M2 Max / 64 GB / 30 GPU cores**. Smaller works — a 9B model in
+4-bit plus BGE-M3 just wants headroom.
+
+| Component | Floor | Recommended minimum | Reference build |
+|---|---|---|---|
+| Chip | Apple Silicon M1 | Apple Silicon M1 Pro/Max | M2 Max |
+| Unified memory | 16 GB (tight, will swap) | 32 GB | 64 GB |
+| Free disk | ~25 GB | ~25 GB | — |
+| macOS | 13 Ventura | 13 Ventura | 15 |
+
+:::caution
+On **16 GB**, close other apps and expect memory pressure / swapping — the model plus
+embeddings plus Postgres leave little headroom. **32 GB** is where it runs without babysitting.
+:::
 
 ## Install the toolchain
 
@@ -80,4 +98,4 @@ Docker Desktop and *not* the `docker compose` (space) plugin. Commands in this g
 `docker-compose` (hyphen) throughout.
 :::
 
-Ready? Next you'll stand up the [serving stack →](/01-serving-stack/)
+Ready? Next you'll stand up the [serving stack →](/build-your-own-AIChatbot/01-serving-stack/)

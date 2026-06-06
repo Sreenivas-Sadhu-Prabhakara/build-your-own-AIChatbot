@@ -88,7 +88,7 @@ CREATE TABLE feedback (
 ```
 
 Track applied migrations with a `schema_migrations` table so a runner can apply each file once
-and stay idempotent. In [chapter 03](/03-ingestion-rag/) you'll apply these with
+and stay idempotent. In [chapter 03](/build-your-own-AIChatbot/03-ingestion-rag/) you'll apply these with
 `go run ./cmd/server -migrate`.
 
 ## Step 3 — BGE-M3 embeddings server
@@ -164,4 +164,4 @@ BGE-M3 (~4.3 GB) downloads to `~/.cache/huggingface` on first run — expect a w
 time the server starts.
 :::
 
-Next: [ingestion & RAG →](/03-ingestion-rag/) — turn documents into searchable meaning.
+Next: [ingestion & RAG →](/build-your-own-AIChatbot/03-ingestion-rag/) — turn documents into searchable meaning.

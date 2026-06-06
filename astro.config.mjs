@@ -12,6 +12,7 @@ export default defineConfig({
     mermaid({ theme: 'default', autoTheme: true }),
     starlight({
       title: 'Build Your Own AI Chatbot',
+      favicon: '/apolaki-favicon.svg',
       description:
         'A free, build-along guide to a self-hosted SEA-LION 9B + RAG Taglish assistant — the Apolaki Solar Brain — at ~₱0 per query.',
       logo: { src: './src/assets/apolaki-logo.svg', alt: 'Apolaki' },

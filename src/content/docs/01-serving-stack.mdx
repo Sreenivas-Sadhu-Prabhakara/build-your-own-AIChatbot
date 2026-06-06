@@ -42,7 +42,7 @@ shows the SEA-LION GGUF (~5.8 GB).
 ## Step 2 — Configure LiteLLM
 
 Create `litellm_config.yaml`. Define a primary `sea-lion-9b` model (routed to Ollama for now —
-in [chapter 07](/07-taglish-lora/) you'll repoint it at your fine-tuned MLX model) and a
+in [chapter 07](/build-your-own-AIChatbot/07-taglish-lora/) you'll repoint it at your fine-tuned MLX model) and a
 fallback chain to a GGUF alias.
 
 ```yaml
@@ -86,4 +86,4 @@ timeout almost always means a client hit a raw model port instead of the `:4000`
 backend wasn't up yet.
 :::
 
-Next: the [data layer →](/02-data-layer/) — Postgres, pgvector, and embeddings.
+Next: the [data layer →](/build-your-own-AIChatbot/02-data-layer/) — Postgres, pgvector, and embeddings.

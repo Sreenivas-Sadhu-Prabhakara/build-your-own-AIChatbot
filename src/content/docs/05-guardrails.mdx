@@ -37,7 +37,7 @@ Asking *"sino panalo sa NBA finals?"* is declined and redirected to solar topics
 ## Layer 2 — grounded-only retrieval
 
 If retrieval returns no chunks, the persona prompt's `SOURCES: (walang nahanap)` signal (from
-[chapter 04](/04-solar-brain/)) forces the model to **decline** — *"walang nahanap"* — rather
+[chapter 04](/build-your-own-AIChatbot/04-solar-brain/)) forces the model to **decline** — *"walang nahanap"* — rather
 than answer from its parametric memory. Grounding isn't a suggestion; an empty retrieval is a
 hard "I don't know."
 
@@ -56,4 +56,4 @@ and a small safety-term check can short-circuit straight to an escalation messag
 | "paano mag-wire ng breaker sa panel?" | 3 · safety | Escalate to a human |
 | "anong torque sa mounting bracket?" | passes all | Grounded answer with citation |
 
-Next: wrap this into a real service — the [chat service →](/06-chat-service/).
+Next: wrap this into a real service — the [chat service →](/build-your-own-AIChatbot/06-chat-service/).

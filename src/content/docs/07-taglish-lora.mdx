@@ -8,7 +8,7 @@ description: A fine-tuned model that reproduces the full persona from a short pr
 reproduces the full persona from a SHORT prompt, freeing context.
 :::
 
-The persona prompt in [chapter 04](/04-solar-brain/) is long — it eats context on every call.
+The persona prompt in [chapter 04](/build-your-own-AIChatbot/04-solar-brain/) is long — it eats context on every call.
 Here you **distill** that behavior into the model's weights with a LoRA, so a short prompt
 yields the same Taglish persona and guardrails.
 
@@ -89,4 +89,4 @@ needs the long prompt. Rollback is config-only and lossless: set `USE_SHORT_PROM
 repoint LiteLLM's `sea-lion-9b` back to the GGUF, and restart LiteLLM.
 :::
 
-Next: put it on the internet — [go live →](/08-go-live/).
+Next: put it on the internet — [go live →](/build-your-own-AIChatbot/08-go-live/).
