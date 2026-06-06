@@ -1,0 +1,84 @@
+---
+title: 03 · Ingestion & RAG
+description: Your docs chunked, embedded, and searchable by meaning.
+---
+
+:::note
+**⏱ ~30 min · 🟡 Intermediate** — By the end: your docs chunked, embedded, and searchable by
+meaning.
+:::
+
+Retrieval is the heart of RAG. In this chapter you create a small seed corpus, chunk and embed
+it, store the vectors, and write a retriever that finds the most relevant chunks for any
+question.
+
+## Step 1 — A seed corpus
+
+Write a deterministic, **stdlib-only** `generate_seed.py` that emits `data/seed/corpus.jsonl` —
+a few Taglish FAQ, datasheet, and support-ticket documents. Each record carries an `audience`
+(`customer` / `buyer` / `installer`), `brand`, `language`, and a sha256 `content_hash` so
+re-runs are reproducible.
+
+```json
+{"title":"ROI ng 5kW system","audience":"buyer","brand":"apolaki","language":"taglish","content":"Sa 5 kW na system, mga ₱4,000/buwan ang matitipid sa kuryente; ang payback ay ~6 taon.","content_hash":"a1b2…"}
+```
+
+```bash
+python3 data/generate_seed.py        # writes data/seed/corpus.jsonl
+```
+
+## Step 2 — Chunk → embed → upsert
+
+The `ingest` command reads each document, splits its text into **word-based chunks with
+overlap** (so a sentence spanning a boundary still retrieves), requests a BGE-M3 embedding per
+chunk, and inserts a document row plus its chunks using **parameterized SQL** (the vector is
+passed as a pgvector text literal).
+
+First wire up environment and apply migrations:
+
+```bash
+cp .env.example .env        # DATABASE_URL, LITELLM_BASE_URL, EMBED_MODEL=bge-m3, GEN_MODEL=sea-lion-9b
+set -a; source .env; set +a
+python3 data/generate_seed.py
+go run ./cmd/server -migrate
+go run ./cmd/ingest
+```
+
+:::tip[✓ Verify]
+`cmd/ingest` prints `ingested N documents`, and the chunk count matches:
+
+```bash
+psql "$DATABASE_URL" -c 'select count(*) from knowledge_chunks'
+```
+:::
+
+## Step 3 — Retrieve by meaning
+
+The retriever embeds the question with the **same** model used at ingest, then runs a
+tenant-scoped top-k cosine search (`<=>` is pgvector's cosine-distance operator) joining chunks
+to their documents:
+
+```sql
+SELECT d.title, d.source_uri, c.content,
+       1 - (c.embedding <=> $1) AS score
+FROM knowledge_chunks c
+JOIN knowledge_documents d ON d.id = c.document_id
+WHERE c.tenant_id = $2
+ORDER BY c.embedding <=> $1
+LIMIT $3;
+```
+
+In Go it returns a slice of `{Title, SourceURI, Content, Score}`. The `EMBED_MODEL` and
+`GEN_MODEL` env vars are the contract between ingest and query time — they must agree, or your
+query vectors won't share a space with the stored ones.
+
+:::caution
+Ingest here is **insert-only**. Before re-ingesting, truncate `knowledge_chunks` and
+`knowledge_documents` first, or you'll get duplicate chunks:
+
+```bash
+psql "$DATABASE_URL" -c 'truncate knowledge_chunks, knowledge_documents restart identity cascade'
+```
+:::
+
+Next: [the solar brain →](/04-solar-brain/) — turn retrieved chunks into a grounded answer.

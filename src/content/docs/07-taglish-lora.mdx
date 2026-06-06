@@ -1,0 +1,92 @@
+---
+title: 07 · Taglish voice LoRA
+description: A fine-tuned model that reproduces the full persona from a short prompt — freeing context.
+---
+
+:::note
+**⏱ a few hours (incl. training) · 🔴 Advanced** — By the end: a fine-tuned model that
+reproduces the full persona from a SHORT prompt, freeing context.
+:::
+
+The persona prompt in [chapter 04](/04-solar-brain/) is long — it eats context on every call.
+Here you **distill** that behavior into the model's weights with a LoRA, so a short prompt
+yields the same Taglish persona and guardrails.
+
+## The idea: prompt distillation
+
+Self-distillation means teaching the base model to imitate *itself under the long prompt*. You
+generate training examples by running the production retrieval + long-prompt + generation path,
+then fine-tune so the model reproduces those outputs from a **short** system prompt. The
+guardrail behavior moves from the prompt into the weights, and you reclaim context tokens.
+
+## Step 1 — Build the dataset
+
+Generate self-distilled examples over a deterministic Taglish question bank by reusing the real
+retrieval + prompt + generation pipeline, then **curate**: keep answers that are grounded when
+they cite, drop the bad ones, and make a category-stratified train/valid/test split.
+
+```bash
+python3 training/make_questions.py     # deterministic Taglish question bank
+go run ./cmd/distill                    # run the prod path → self-distilled examples
+python3 training/curate.py              # filter + category-stratified split
+```
+
+## Step 2 — Train with MLX-LM LoRA
+
+Define `lora_config.yaml` and run the driver, which converts the HF model to MLX format
+(one-time), trains the LoRA, and fuses it back into a standalone model.
+
+```yaml
+# lora_config.yaml
+model: "training/mlx/sea-lion-9b"   # converted MLX path
+train: true
+data: "training/data"               # train.jsonl / valid.jsonl
+iters: 400
+num_layers: 16
+lora_parameters:
+  rank: 16
+  scale: 20.0
+learning_rate: 1.0e-5
+seed: 42
+```
+
+```bash
+bash training/train.sh              # convert (once) → train → fuse
+```
+
+:::tip[✓ Verify]
+Train loss falls from roughly **0.21 → 0.03** over 400 iters, and a fused model lands at
+`training/fused/sea-lion-taglish`. Keep the **iter-200** checkpoint as a fallback in case
+validation loss rose near the end (mild overfit).
+:::
+
+## Step 3 — Eval gate (ship / no-ship)
+
+Don't ship on vibes. `eval.py` compares the **candidate** (tuned model + short prompt) against
+the **baseline** (base model + full prompt) on a golden set, scoring: answer quality, grounding,
+no-source-decline %, safety-escalate %, and overall answer rate. **Ship only if the guardrail
+behaviors are preserved** — a fluent model that stopped declining or stopped escalating is a
+regression, not an upgrade.
+
+```bash
+python3 training/eval.py
+```
+
+## Step 4 — Serve the tuned model
+
+Serve the fused model with MLX on its own port, then make it LiteLLM's primary:
+
+```bash
+mlx_lm.server --model training/fused/sea-lion-taglish --port 8001
+```
+
+Point LiteLLM's `sea-lion-9b` route at `http://localhost:8001`, demote the Ollama GGUF to the
+fallback, and set `USE_SHORT_PROMPT=true` so your service sends the short system prompt.
+
+:::caution
+Set `USE_SHORT_PROMPT=true` **only** when `GEN_MODEL` is the tuned model — the base model still
+needs the long prompt. Rollback is config-only and lossless: set `USE_SHORT_PROMPT=false`,
+repoint LiteLLM's `sea-lion-9b` back to the GGUF, and restart LiteLLM.
+:::
+
+Next: put it on the internet — [go live →](/08-go-live/).

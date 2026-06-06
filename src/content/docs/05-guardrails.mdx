@@ -1,0 +1,59 @@
+---
+title: 05 · Guardrails
+description: A 3-layer guardrail that keeps the bot on-topic, grounded, and safe.
+---
+
+:::note
+**⏱ ~25 min · 🟡 Intermediate** — By the end: a 3-layer guardrail that keeps the bot on-topic,
+grounded, and safe.
+:::
+
+A grounded model still needs boundaries: it shouldn't answer off-topic questions, shouldn't
+invent when retrieval is empty, and shouldn't give dangerous electrical instructions. Three
+cheap layers handle all three.
+
+## Layer 1 — topic gate (LLM-free)
+
+Before *any* model call, a keyword/vocabulary gate rejects clearly off-topic questions. It's
+just string matching against a solar vocabulary plus the installer/buyer technical terms your
+audience uses (`torque`, `MPPT`, `AP-450W`, `inverter`, `kWh`, `tilt`, `azimuth`, …). Cheap,
+instant, and it saves a generation call.
+
+```go
+func OnTopic(q string) bool {
+    ql := strings.ToLower(q)
+    for _, kw := range solarVocab {     // "solar","panel","kuryente","inverter","torque",...
+        if strings.Contains(ql, kw) { return true }
+    }
+    return false
+}
+```
+
+:::tip[✓ Verify]
+Asking *"sino panalo sa NBA finals?"* is declined and redirected to solar topics, while
+*"anong torque sa mounting?"* passes the gate.
+:::
+
+## Layer 2 — grounded-only retrieval
+
+If retrieval returns no chunks, the persona prompt's `SOURCES: (walang nahanap)` signal (from
+[chapter 04](/04-solar-brain/)) forces the model to **decline** — *"walang nahanap"* — rather
+than answer from its parametric memory. Grounding isn't a suggestion; an empty retrieval is a
+hard "I don't know."
+
+## Layer 3 — safety / escalate
+
+Questions about live wiring, breaker panels, or electrical hazards must **escalate to a human**
+instead of returning install steps. The persona forbids step-by-step electrical instructions,
+and a small safety-term check can short-circuit straight to an escalation message.
+
+## How the layers combine
+
+| Input | Layer that fires | Behavior |
+|---|---|---|
+| "sino panalo sa NBA?" | 1 · topic gate | Declined + redirected to solar |
+| "anong specs ng walang-source na produkto X?" | 2 · grounded-only | "walang nahanap" decline |
+| "paano mag-wire ng breaker sa panel?" | 3 · safety | Escalate to a human |
+| "anong torque sa mounting bracket?" | passes all | Grounded answer with citation |
+
+Next: wrap this into a real service — the [chat service →](/06-chat-service/).

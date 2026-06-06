@@ -1,0 +1,83 @@
+---
+title: 00 · Prerequisites
+description: Hardware, runtimes, models, and knowledge you need before building the Apolaki Solar Brain.
+---
+
+:::note
+**⏱ ~20 min · 🟢 Beginner** — By the end: a Mac that's ready to build.
+:::
+
+This guide builds a local LLM stack, so you need an Apple-Silicon Mac with enough unified
+memory to hold a 9B model plus an embeddings model. Everything else is free, open-source
+tooling you install once.
+
+## Hardware
+
+The reference build runs on an **M2 Max / 64 GB / 30 GPU cores**. You can go smaller, but a 9B
+model in 4-bit plus BGE-M3 embeddings wants headroom.
+
+| Component | Minimum | Reference build |
+|---|---|---|
+| Chip | Apple Silicon (M1 or newer) | M2 Max |
+| Unified memory | 32 GB | 64 GB |
+| Free disk | ~25 GB (models + caches) | — |
+| macOS | 13 Ventura or newer | 15 |
+
+## Install the toolchain
+
+Install the system packages with Homebrew. If you don't have Homebrew yet, install it from
+`brew.sh` first.
+
+```bash
+# Homebrew packages
+brew install go python@3.11 colima docker docker-compose ollama git make
+# Python tooling (you'll create a venv per service later)
+pip3 install --upgrade pip
+```
+
+:::tip[✓ Verify]
+Each of these prints a version:
+
+```bash
+go version        # ≥ 1.22
+python3 --version # ≥ 3.11
+colima version
+ollama --version
+```
+:::
+
+## Install MLX + LiteLLM
+
+**MLX** is Apple's array framework for on-device inference; `mlx-lm` serves LLMs on the GPU.
+**LiteLLM** is the proxy that gives all your local models one OpenAI-compatible endpoint.
+
+```bash
+pip3 install mlx-lm litellm
+```
+
+:::tip[✓ Verify]
+```bash
+python3 -c "import mlx_lm; print('mlx ok')"   # → mlx ok
+litellm --version                              # prints a version
+```
+:::
+
+## Accounts & knowledge
+
+You'll be comfortable here if you:
+
+- know your way around a **terminal**, and can read **Go** and **Python**;
+- understand **REST** and **server-sent events (SSE)** at a basic level;
+- grasp **retrieval-augmented generation (RAG)** at a high level — embed text, store vectors,
+  retrieve by similarity, condition the model on what you retrieved.
+
+Only for the final **08 · Go live** chapter, you'll also want a free **Netlify** account and
+**ngrok** (or a Cloudflare account for a stable tunnel).
+
+:::caution
+On this stack, "Docker" means **Colima** + the standalone `docker-compose` binary — *not*
+Docker Desktop and *not* the `docker compose` (space) plugin. Commands in this guide use
+`docker-compose` (hyphen) throughout.
+:::
+
+Ready? Next you'll stand up the [serving stack →](/01-serving-stack/)

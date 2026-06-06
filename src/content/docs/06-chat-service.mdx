@@ -1,0 +1,91 @@
+---
+title: 06 · Chat service
+description: An HTTP chat API with streaming, feedback logging, health, and audience modes.
+---
+
+:::note
+**⏱ ~35 min · 🟡 Intermediate** — By the end: an HTTP chat API with streaming, feedback logging,
+health, and audience modes.
+:::
+
+The CLI proved the brain works. Now expose it as an HTTP service so a web widget — or any
+client — can talk to it.
+
+## Step 1 — Streaming endpoint
+
+`POST /assistant/chat` is server-sent events. It threads auth (a stub-JWT or dev headers in
+local development) → the topic gate → retrieval → assemble → stream, forwarding each token as an
+SSE `data:` line.
+
+```go
+func handleChat(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "text/event-stream")
+    flusher := w.(http.Flusher)
+    var req struct{ Message, Mode string }
+    _ = json.NewDecoder(r.Body).Decode(&req)
+
+    if !OnTopic(req.Message) {                       // Layer 1
+        writeSSE(w, flusher, redirectMessage); return
+    }
+    chunks := retriever.TopK(r.Context(), req.Message, audienceFor(req.Mode), 4)
+    system, user := Assemble(req.Message, chunks)    // Layers 2 + 3 live in the prompt
+    Stream(r.Context(), litellmBase, genModel, system, user, func(tok string) {
+        writeSSE(w, flusher, tok)
+    })
+}
+```
+
+## Step 2 — Modes (one brain, many personas)
+
+The same pipeline serves three audiences. `mode` comes from the request body and selects both
+which document `audience` to retrieve from and which Taglish persona to use:
+
+- **`customer`** — existing owners: bills, savings, maintenance.
+- **`buyer`** — prospects: ROI, financing, sizing.
+- **`installer`** — technicians: torque specs, wiring standards, datasheets.
+
+```go
+func audienceFor(mode string) string {
+    switch mode {
+    case "buyer":     return "buyer"
+    case "installer": return "installer"
+    default:          return "customer"
+    }
+}
+```
+
+:::tip[✓ Verify]
+In `installer` mode, a torque question retrieves only installer docs and returns the datasheet
+value — e.g. **"16–20 Nm"** — citing the mounting spec. The same question in `customer` mode
+won't surface that installer-only document.
+:::
+
+## Step 3 — Feedback flywheel
+
+Persist every turn to the tables from [chapter 02](/02-data-layer/): a row in `conversations`,
+each message in `messages`, and any 👍/👎 in `feedback`. These real interactions become the
+training data you'll use to improve the model later.
+
+```go
+convID := store.NewConversation(tenant, req.Mode)
+store.AddMessage(convID, "user", req.Message)
+store.AddMessage(convID, "assistant", fullReply)
+// later, from the UI:  POST /assistant/feedback {message_id, rating: +1|-1}
+```
+
+## Step 4 — Health + migrate
+
+A `GET /assistant/health` returns `{"status":"ok"}` (or `503` if the DB is unreachable), and a
+`-migrate` flag applies migrations and exits — handy for first run and CI.
+
+```bash
+go run ./cmd/server -migrate     # apply migrations, then exit
+go run ./cmd/server              # serve on :8090
+curl -s localhost:8090/assistant/health
+```
+
+:::tip[✓ Verify]
+Health returns `{"status":"ok"}`.
+:::
+
+Next: give the model its voice — the [Taglish voice LoRA →](/07-taglish-lora/).

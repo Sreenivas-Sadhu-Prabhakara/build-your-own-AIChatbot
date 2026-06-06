@@ -1,0 +1,100 @@
+---
+title: 04 · The solar brain
+description: Your first grounded Taglish answer with citations, from a CLI.
+---
+
+:::note
+**⏱ ~30 min · 🟡 Intermediate** — By the end: your first grounded Taglish answer with citations,
+streaming from a CLI.
+:::
+
+Now you connect the pieces: take a question, retrieve grounding, wrap it in a persona prompt,
+stream a generation, and print the cited sources. This is the smallest end-to-end "brain."
+
+## Step 1 — The persona prompt
+
+`Assemble(question, chunks)` returns a `(system, user)` pair. The **system** message holds a
+condensed Taglish-advocate persona with hard rules: answer **only** from the provided sources,
+stay **solar-only**, **cite** the sources you use, and **escalate** on anything about live
+wiring or electrical safety. The **user** message lists numbered `SOURCES` followed by the
+`QUESTION`, with an explicit signal when retrieval found nothing.
+
+```go
+func Assemble(question string, chunks []Chunk) (system, user string) {
+    system = `Ikaw ay isang Taglish solar advocate. Sumagot LAMANG mula sa SOURCES.
+Kung walang sapat na source, sabihin mong "walang nahanap" — huwag mag-imbento.
+Solar topics lang. Mag-cite ng source title. Kapag tungkol sa kuryente/wiring na
+delikado, mag-escalate sa tao, huwag magbigay ng install steps.`
+
+    if len(chunks) == 0 {
+        user = "SOURCES: (walang nahanap)\n\nQUESTION: " + question
+        return
+    }
+    var b strings.Builder
+    b.WriteString("SOURCES:\n")
+    for i, c := range chunks {
+        fmt.Fprintf(&b, "[%d] %s — %s\n", i+1, c.Title, c.Content)
+    }
+    fmt.Fprintf(&b, "\nQUESTION: %s", question)
+    user = b.String()
+    return
+}
+```
+
+## Step 2 — Streaming generator
+
+A small OpenAI-compatible client posts to `/chat/completions` with `"stream": true` and calls
+`onToken` for each content delta until the `[DONE]` sentinel. Use a large scanner buffer (some
+SSE lines are long), skip keep-alive comments, and a generous timeout — local GGUF generation
+isn't instant.
+
+```go
+func Stream(ctx context.Context, base, model, system, user string, onToken func(string)) error {
+    body, _ := json.Marshal(map[string]any{
+        "model": model, "stream": true,
+        "messages": []any{
+            map[string]string{"role": "system", "content": system},
+            map[string]string{"role": "user", "content": user},
+        },
+    })
+    req, _ := http.NewRequestWithContext(ctx, "POST", base+"/chat/completions", bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
+    resp, err := (&http.Client{Timeout: 600 * time.Second}).Do(req)
+    if err != nil { return err }
+    defer resp.Body.Close()
+
+    sc := bufio.NewScanner(resp.Body)
+    sc.Buffer(make([]byte, 0, 1<<20), 1<<20)
+    for sc.Scan() {
+        line := sc.Text()
+        if !strings.HasPrefix(line, "data: ") { continue }   // skip keep-alives
+        data := strings.TrimPrefix(line, "data: ")
+        if data == "[DONE]" { break }
+        var ev struct{ Choices []struct{ Delta struct{ Content string } } }
+        if json.Unmarshal([]byte(data), &ev) == nil && len(ev.Choices) > 0 {
+            onToken(ev.Choices[0].Delta.Content)
+        }
+    }
+    return sc.Err()
+}
+```
+
+## Step 3 — The `ask` CLI
+
+`cmd/ask` wires it all together: load config → open the DB → retrieve the top-4 chunks →
+assemble → stream tokens to stdout → print the cited titles.
+
+```bash
+set -a; source .env; set +a
+go run ./cmd/ask
+# then type:  magkano matitipid sa kuryente kada buwan?
+```
+
+:::tip[✓ Verify]
+A grounded **Taglish** answer streams in token by token and ends by listing the cited source
+title(s) — e.g. the ROI document, citing roughly **₱4,000/month** saved on a 5 kW system. Ask
+something your corpus doesn't cover and it should say *"walang nahanap"* instead of inventing an
+answer.
+:::
+
+Next: [guardrails →](/05-guardrails/) — keep it on-topic, grounded, and safe.

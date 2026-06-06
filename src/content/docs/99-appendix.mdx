@@ -1,0 +1,41 @@
+---
+title: Appendix
+description: Troubleshooting, the ₱0 cost model, and swapping models.
+---
+
+A grab-bag of fixes, the cost rationale, and how to make this guide your own.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Connection reset / timeouts from a client | Call the **LiteLLM proxy on `:4000`**, not a raw model port. Confirm the backend (Ollama/MLX) is actually up first. |
+| `docker compose: command not found` | This stack uses **Colima** + the standalone `docker-compose` (hyphen). Run `colima start` first. |
+| Embeddings length ≠ 1024 | Wrong embeddings model. BGE-M3 is 1024-dim; your `vector(N)` column and HNSW index must match. |
+| Duplicate chunks after re-ingest | Ingest is insert-only — `truncate knowledge_chunks, knowledge_documents restart identity cascade` before re-running. |
+| Model answers off-topic questions | The topic gate (Layer 1) vocabulary is too narrow — add the missing terms. |
+| Model invents instead of declining | Retrieval returned nothing but the prompt didn't get the `(walang nahanap)` signal — check the assemble step. |
+| First run hangs for minutes | BGE-M3 (~4.3 GB) or the SEA-LION GGUF (~5.8 GB) is downloading. Watch `/tmp/bge.log` or `ollama` output. |
+
+## Why ~₱0 per query
+
+The model, embeddings, and database all run on **your own Mac**. There's no per-token cloud
+bill and no managed-database fee — the marginal cost of a query is the **electricity** to run
+the GPU for a few seconds. The only ongoing "cost" is keeping the machine on.
+
+**When to leave ₱0 behind:** a single Mac comfortably serves light traffic. Past roughly
+**~1,000 users** or sustained concurrency, move generation to a cloud GPU — the architecture
+doesn't change, only LiteLLM's upstream route does.
+
+## Swap the model
+
+This guide's spine is SEA-LION + RAG, but nothing is hard-wired:
+
+- **Different LLM:** change the LiteLLM `model_list` route and your `GEN_MODEL` env var. The
+  service code is unchanged because everything goes through the OpenAI-compatible `:4000`
+  endpoint.
+- **Different embeddings:** keep it **1024-dim**, or update the `vector(N)` column *and* the
+  HNSW index to the new dimension, then re-ingest. Embedding model at query time must match the
+  one used at ingest.
+- **Different domain:** replace the seed corpus and the topic-gate vocabulary. The pipeline —
+  gate → retrieve → assemble → generate → ground-or-escalate → log — stays the same.

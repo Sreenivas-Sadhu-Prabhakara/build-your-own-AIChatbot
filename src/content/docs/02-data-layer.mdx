@@ -1,0 +1,167 @@
+---
+title: 02 · Data layer
+description: Postgres with pgvector + HNSW, and a BGE-M3 embeddings endpoint on :8100.
+---
+
+:::note
+**⏱ ~30 min · 🟡 Intermediate** — By the end: Postgres with pgvector + HNSW, and a BGE-M3
+embeddings endpoint on `:8100`.
+:::
+
+RAG needs two things to store and search meaning: a **vector database** (Postgres + pgvector)
+and an **embeddings model** (BGE-M3) that turns text into 1024-dimension vectors.
+
+## Step 1 — Start Postgres (pgvector)
+
+Create `docker-compose.yml` using the official `pgvector` image so the extension is preinstalled:
+
+```yaml
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: solar
+      POSTGRES_PASSWORD: solar
+      POSTGRES_DB: solar
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
+```
+
+Bring it up (Colima provides the Docker runtime):
+
+```bash
+colima start && docker-compose up -d
+```
+
+:::tip[✓ Verify]
+```bash
+docker-compose ps    # the db service is "Up"
+psql "postgres://solar:solar@localhost:5433/solar?sslmode=disable" -c 'select 1'   # → 1
+```
+:::
+
+## Step 2 — Schema + HNSW index
+
+Your migration creates the knowledge tables (with a 1024-dim vector column and an **HNSW**
+index for fast approximate cosine search) plus the conversation log tables you'll use later.
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE knowledge_documents (
+  id          BIGSERIAL PRIMARY KEY,
+  tenant_id   TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  source_uri  TEXT NOT NULL,
+  audience    TEXT NOT NULL,          -- customer | buyer | installer
+  content_hash TEXT NOT NULL
+);
+
+CREATE TABLE knowledge_chunks (
+  id          BIGSERIAL PRIMARY KEY,
+  document_id BIGINT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+  tenant_id   TEXT NOT NULL,
+  content     TEXT NOT NULL,
+  embedding   vector(1024) NOT NULL
+);
+
+CREATE INDEX ON knowledge_chunks
+  USING hnsw (embedding vector_cosine_ops);
+
+-- Conversation log (used by the chat service in chapter 06)
+CREATE TABLE conversations (
+  id BIGSERIAL PRIMARY KEY, tenant_id TEXT NOT NULL, mode TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE messages (
+  id BIGSERIAL PRIMARY KEY, conversation_id BIGINT REFERENCES conversations(id),
+  role TEXT NOT NULL, content TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE feedback (
+  id BIGSERIAL PRIMARY KEY, message_id BIGINT REFERENCES messages(id),
+  rating SMALLINT NOT NULL    -- +1 / -1
+);
+```
+
+Track applied migrations with a `schema_migrations` table so a runner can apply each file once
+and stay idempotent. In [chapter 03](/03-ingestion-rag/) you'll apply these with
+`go run ./cmd/server -migrate`.
+
+## Step 3 — BGE-M3 embeddings server
+
+**BGE-M3** (`BAAI/bge-m3` on Hugging Face) produces 1024-dim dense vectors. Wrap it in a tiny
+FastAPI service exposing an **OpenAI-compatible** `/v1/embeddings` route, so LiteLLM and your Go
+code call it the same way they call any embeddings model.
+
+```python
+# embeddings-server/server.py
+from fastapi import FastAPI
+from pydantic import BaseModel
+from FlagEmbedding import BGEM3FlagModel
+
+app = FastAPI()
+model = BGEM3FlagModel("BAAI/bge-m3", use_fp16=True)
+
+class EmbedRequest(BaseModel):
+    model: str
+    input: str | list[str]
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "dim": 1024}
+
+@app.post("/v1/embeddings")
+def embeddings(req: EmbedRequest):
+    texts = [req.input] if isinstance(req.input, str) else req.input
+    vecs = model.encode(texts, batch_size=8)["dense_vecs"]
+    data = [{"object": "embedding", "index": i, "embedding": v.tolist()}
+            for i, v in enumerate(vecs)]
+    return {"object": "list", "data": data, "model": req.model}
+```
+
+Set up and run it:
+
+```bash
+cd embeddings-server
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # fastapi uvicorn FlagEmbedding
+nohup .venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8100 > /tmp/bge.log 2>&1 &
+```
+
+:::tip[✓ Verify]
+```bash
+curl -s localhost:8100/v1/embeddings -H 'content-type: application/json' \
+  -d '{"model":"bge-m3","input":"araw"}' | jq '.data[0].embedding | length'
+```
+→ `1024`.
+:::
+
+## Step 4 — Register the embeddings model in LiteLLM
+
+Add BGE-M3 to `litellm_config.yaml` and restart LiteLLM so clients can embed through `:4000`
+too:
+
+```yaml
+  - model_name: bge-m3
+    litellm_params:
+      model: openai/bge-m3
+      api_base: http://localhost:8100/v1
+      api_key: none
+```
+
+Verify the same call works through the proxy:
+
+```bash
+curl -s localhost:4000/v1/embeddings -H 'content-type: application/json' \
+  -d '{"model":"bge-m3","input":"araw"}' | jq '.data[0].embedding | length'   # → 1024
+```
+
+:::caution
+BGE-M3 (~4.3 GB) downloads to `~/.cache/huggingface` on first run — expect a wait the first
+time the server starts.
+:::
+
+Next: [ingestion & RAG →](/03-ingestion-rag/) — turn documents into searchable meaning.

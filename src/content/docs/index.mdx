@@ -1,40 +1,91 @@
 ---
-title: Welcome to Starlight
-description: Get started building your docs site with Starlight.
-template: splash # Remove or comment out this line to display the site sidebar on this page.
+title: Build Your Own AI Chatbot
+description: A free, build-along guide to a self-hosted SEA-LION 9B + RAG Taglish assistant at ~₱0 per query.
+template: splash
 hero:
-  tagline: Congrats on setting up a new Starlight project!
+  tagline: Build a self-hosted, Taglish-speaking, retrieval-grounded solar assistant — the Apolaki Solar Brain — on your own Mac, at ~₱0 per query.
   image:
-    file: ../../assets/houston.webp
+    file: ../../assets/apolaki-logo.svg
   actions:
-    - text: Example Guide
-      link: /guides/example/
+    - text: Start with prerequisites
+      link: /00-prerequisites/
       icon: right-arrow
-    - text: Read the Starlight docs
-      link: https://starlight.astro.build
-      icon: external
-      variant: minimal
+      variant: primary
+    - text: See the architecture
+      link: '#architecture'
+      icon: open-book
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-## Next steps
+You're going to build a **retrieval-augmented chatbot** that answers only from your own
+documents, speaks **Taglish**, runs entirely on an Apple-Silicon Mac, and costs roughly
+**₱0 per query** because nothing leaves your machine. The worked example is the *Apolaki Solar
+Brain* — a support assistant for a solar company — but every step is reusable for any domain:
+swap the docs, keep the spine.
 
-<CardGrid stagger>
-	<Card title="Update content" icon="pencil">
-		Edit `src/content/docs/index.mdx` to see this page change.
-	</Card>
-	<Card title="Change page layout" icon="document">
-		Delete `template: splash` in `src/content/docs/index.mdx` to display a
-		sidebar on this page.
-	</Card>
-	<Card title="Add new content" icon="add-document">
-		Add Markdown or MDX files to `src/content/docs` to create new pages.
-	</Card>
-	<Card title="Configure your site" icon="setting">
-		Edit your `sidebar` and other config in `astro.config.mjs`.
-	</Card>
-	<Card title="Read the docs" icon="open-book">
-		Learn more in [the Starlight Docs](https://starlight.astro.build/).
-	</Card>
+<CardGrid>
+  <Card title="Grounded" icon="approve-check">
+    Answers come only from documents you ingest. No sources found? It says so instead of
+    inventing — retrieval-grounded by construction.
+  </Card>
+  <Card title="Local & private" icon="laptop">
+    SEA-LION 9B runs locally via MLX/Ollama behind a LiteLLM proxy. No cloud bill, no data
+    leaving your Mac — just electricity.
+  </Card>
+  <Card title="Taglish voice" icon="comment">
+    A fine-tuned LoRA gives the model a consistent Filipino-English advocate persona from a
+    short prompt, freeing up context.
+  </Card>
+  <Card title="Guard-railed" icon="shield">
+    Three layers keep it on-topic, grounded, and safe — off-topic questions are redirected and
+    electrical-hazard questions escalate to a human.
+  </Card>
 </CardGrid>
+
+## Architecture
+
+Every request flows through the same pipeline: gate it, retrieve grounding, assemble a persona
+prompt with numbered sources, generate with a local model, and either return a grounded answer
+or escalate — logging the turn for later improvement.
+
+```mermaid
+flowchart LR
+  U[Client] -->|chat SSE| G[Topic gate]
+  G --> R[Retrieve pgvector HNSW]
+  R --> P[Assemble persona + sources]
+  P --> M[SEA-LION 9B via LiteLLM]
+  M --> S[Grounded-or-escalate]
+  S --> L[(Log + feedback)]
+  S --> U
+```
+
+*Legend:* the **topic gate** rejects off-topic questions before any model call; **retrieval**
+finds the most relevant chunks by meaning; the **persona prompt** wraps them with citation
+rules; **SEA-LION 9B** generates; **grounded-or-escalate** is the safety net; every turn is
+**logged** to feed the retraining flywheel.
+
+If the diagram above doesn't render in your environment, here's the same pipeline as text:
+
+```
+Client → Topic gate → Retrieve (pgvector/HNSW) → Assemble (persona + sources)
+       → SEA-LION 9B (LiteLLM) → Grounded-or-escalate → {reply to client, log + feedback}
+```
+
+## The journey
+
+Build it one layer at a time. Each chapter ends with a **✓ Verify** checkpoint so you know the
+layer actually works before moving on.
+
+1. [**00 · Prerequisites**](/00-prerequisites/) — get your Mac ready.
+2. [**01 · Serving stack**](/01-serving-stack/) — one OpenAI-compatible endpoint with fallback.
+3. [**02 · Data layer**](/02-data-layer/) — Postgres + pgvector + a BGE-M3 embeddings server.
+4. [**03 · Ingestion & RAG**](/03-ingestion-rag/) — chunk, embed, and search your docs by meaning.
+5. [**04 · The solar brain**](/04-solar-brain/) — your first grounded Taglish answer.
+6. [**05 · Guardrails**](/05-guardrails/) — on-topic, grounded, and safe.
+7. [**06 · Chat service**](/06-chat-service/) — a streaming HTTP API with feedback + modes.
+8. [**07 · Taglish voice LoRA**](/07-taglish-lora/) — fine-tune the persona into the model.
+9. [**08 · Go live**](/08-go-live/) — reach your local brain from a public web app.
+
+Then the [Appendix](/99-appendix/) covers troubleshooting, the ₱0 cost model, and swapping
+models. Ready? [Start with the prerequisites →](/00-prerequisites/)
