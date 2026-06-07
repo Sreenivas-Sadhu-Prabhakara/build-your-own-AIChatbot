@@ -1,0 +1,101 @@
+---
+title: 08 · Quantize & A/B
+description: Shrink the fused model for cheap serving — and prove the smaller one is still safe with an A/B against the ship gate.
+---
+
+:::note
+**⏱ ~45 min (incl. conversion) · 🟡 Intermediate** — By the end: a quantized model that
+serves in a fraction of the memory, **A/B-tested** so you ship the smallest one that still
+passes every guardrail.
+:::
+
+The fused model from [chapter 07](/build-your-own-AIChatbot/07-taglish-lora/) is **17 GB** of
+bf16 weights. That's a lot of unified memory to keep resident just to serve. **Quantization**
+packs the weights into 4- or 8-bit integers — far smaller and faster to load — but it's lossy,
+so the only honest way to choose a bit-width is to **measure**: run the same golden set + ship
+gate from chapter 07 against each candidate and pick the smallest one that doesn't regress.
+
+## Step 1 — Produce the quants
+
+`mlx_lm convert` reads the fused bf16 model and writes a quantized copy. Make a 4-bit and an
+8-bit version:
+
+```bash
+SRC=training/fused/sea-lion-taglish
+
+python -m mlx_lm convert --hf-path "$SRC" \
+  --mlx-path training/quantized/sea-lion-taglish-4bit -q --q-bits 4 --q-group-size 64
+
+python -m mlx_lm convert --hf-path "$SRC" \
+  --mlx-path training/quantized/sea-lion-taglish-8bit -q --q-bits 8 --q-group-size 64
+```
+
+## Step 2 — Serve both for an A/B
+
+Run each quant on its own port so you can hit them side by side:
+
+```bash
+mlx_lm.server --model training/quantized/sea-lion-taglish-4bit --port 8001 &
+mlx_lm.server --model training/quantized/sea-lion-taglish-8bit --port 8002 &
+```
+
+:::caution
+`mlx_lm.server` loads exactly the model you pass to `--model`, but the **`model` field in each
+request must repeat that same path** — send a different id and the server tries to fetch it from
+Hugging Face and 404s. Point your eval harness at the path, not a nickname.
+:::
+
+## Step 3 — Run the A/B against the ship gate
+
+Reuse the chapter-07 rubric (`score`, `gate`, `generate`) so quantization is judged on the
+**exact same bar** as the LoRA: quality, grounding (no hallucination), no-source decline %,
+safety-escalate %, and an **answer-rate** guard that catches a model which "passes" grounding by
+simply declining everything. The harness runs the golden set against both ports, captures
+per-question pass/fail + latency, and applies the gate per variant.
+
+```bash
+python3 training/ab_eval.py
+# → training/reports/quant-ab-report.html  +  quant-ab-results.json
+```
+
+## Results
+
+Both quants held quality and every guardrail at 100%. The deciding signal was **answer rate**:
+the 4-bit model got noticeably more conservative and started declining questions it should have
+answered from the sources — dropping to 0.67, below the gate's `baseline − 0.25 = 0.75`
+threshold — so the gate **fails it**. The 8-bit model kept its answer rate at 0.83 and ships.
+
+| Metric | Baseline (fp16 + full prompt) | 4-bit | 8-bit |
+| --- | --- | --- | --- |
+| Overall quality | 100% | 100% | 100% |
+| Grounding (no hallucination) | 100% | 100% | 100% |
+| **Answer rate** | 100% | **67%** | **83%** |
+| No-source decline | 100% | 100% | 100% |
+| Safety escalation | 100% | 100% | 100% |
+| On-disk size | 17 GB | **4.9 GB** | **9.2 GB** |
+| Avg latency / query | — | ~4.8 s | ~5.1 s |
+| **Ship gate** | — | ❌ **NO-SHIP** (over-declines) | ✅ **SHIP** |
+
+📊 **[Full A/B report (HTML) →](/build-your-own-AIChatbot/quant-ab-report.html)** — per-question
+pass/fail and latency for both variants.
+
+:::tip[The lesson]
+Smaller isn't free. The 4-bit model would have looked fine on a casual read — fluent Taglish,
+no hallucinations — but the gate's answer-rate guard caught a real behavioral regression:
+it had quietly become a worse assistant by *under-answering*. **8-bit is the sweet spot here**:
+~46% smaller than fp16 with no measurable behavior loss. Always re-run the gate after
+quantizing; never ship a quant on vibes.
+:::
+
+## Step 4 — Serve the winner
+
+Point LiteLLM's `sea-lion-9b` route at the 8-bit server and retire the others:
+
+```bash
+mlx_lm.server --model training/quantized/sea-lion-taglish-8bit --port 8001
+```
+
+Keep `USE_SHORT_PROMPT=true` (the quant inherits the LoRA's short-prompt behavior). Rollback is
+still config-only: repoint LiteLLM back to the fp16 fused model or the Ollama GGUF and restart.
+
+Next: put it on the internet — [go live →](/build-your-own-AIChatbot/09-go-live/).

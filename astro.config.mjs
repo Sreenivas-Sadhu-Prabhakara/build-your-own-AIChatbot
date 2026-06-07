@@ -35,7 +35,8 @@ export default defineConfig({
         ]},
         { label: 'Make it shine', items: [
           { label: '07 · Taglish voice LoRA', link: '/07-taglish-lora/' },
-          { label: '08 · Go live', link: '/08-go-live/' },
+          { label: '08 · Quantize & A/B', link: '/08-quantization/' },
+          { label: '09 · Go live', link: '/09-go-live/' },
         ]},
         { label: 'Reference', items: [
           { label: 'Appendix', link: '/99-appendix/' },

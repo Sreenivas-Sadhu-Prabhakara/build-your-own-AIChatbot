@@ -1,5 +1,5 @@
 ---
-title: 08 · Go live
+title: 09 · Go live
 description: Your local brain reachable from a public web app — still ~₱0.
 ---
 
@@ -70,7 +70,7 @@ ngrok domain or a Cloudflare Tunnel avoids this entirely.
 - **Rollback the model:** set `USE_SHORT_PROMPT=false`, repoint LiteLLM's `sea-lion-9b` to the
   Ollama GGUF, and restart LiteLLM. Config-only, no data loss.
 - **After a reboot,** nothing auto-starts. Bring services up in order: Colima + Postgres →
-  embeddings server `:8100` → LiteLLM `:4000` → (tuned) `mlx_lm.server :8001` → Go service
+  embeddings server `:8100` → LiteLLM `:4000` → (8-bit quant) `mlx_lm.server :8001` → Go service
   `:8090` → tunnel. Then refresh the proxy URL if it changed.
 
 That's the whole system — local, grounded, Taglish, and live. See the [Appendix](/build-your-own-AIChatbot/99-appendix/)
